@@ -1,0 +1,82 @@
+# version: '3.8'
+
+services:
+  # 1. APACHE NIFI (Ingestion Layer)
+  nifi:
+    image: apache/nifi:1.25.0
+    container_name: rag_nifi
+    ports:
+      - "8443:8443" # NiFi Web UI (HTTPS)
+    environment:
+      - NIFI_WEB_HTTPS_PORT=8443
+      - SINGLE_USER_CREDENTIALS_USERNAME=admin
+      - SINGLE_USER_CREDENTIALS_PASSWORD=SuperSecretPassword123! # Must be 12+ chars
+    volumes:
+      - ./data/input_pdfs:/opt/nifi/nifi-current/data/input_pdfs # Maps local PDF folder to NiFi
+    networks:
+      - rag_network
+
+  # 2. HADOOP NAMENODE (HDFS Storage Layer)
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: rag_namenode
+    ports:
+      - "9870:9870" # HDFS Web UI
+      - "9000:9000" # HDFS Communication Port
+    environment:
+      - CLUSTER_NAME=insurance_cluster
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - ./data/hdfs_storage/namenode:/hadoop/dfs/name
+      - ./data/input_pdfs:/opt/nifi/nifi-current/data/input_pdfs
+      - ./data/core-site.xml:/opt/nifi/nifi-current/conf/core-site.xml
+    networks:
+      - rag_network
+
+  # 3. HADOOP DATANODE
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: rag-datanode
+    hostname: rag-datanode
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    env_file:
+      - ./hadoop.env
+    ports:
+      - "9864:9864" # WebHDFS HTTP
+      - "9866:9866" # Data Transfer Port
+    volumes:
+      - ./data/hdfs_storage/datanode:/hadoop/dfs/data
+    networks:
+      - rag_network
+
+  # 4. NEO4J (Graph Database for GraphRAG)
+  neo4j:
+    image: neo4j:5.15.0
+    container_name: rag_neo4j
+    ports:
+      - "7474:7474" # HTTP UI
+      - "7687:7687" # Bolt Protocol
+    environment:
+      - NEO4J_AUTH=neo4j/insurance_graph_password
+    networks:
+      - rag_network
+
+  # 5. MILVUS (Standalone Vector Database)
+  milvus:
+    image: milvusdb/milvus:v2.3.11
+    container_name: rag_milvus
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: milvus:2379
+      MINIO_ADDRESS: milvus:9000
+    ports:
+      - "19530:19530" # Milvus Server
+      - "9091:9091"   # Milvus Web UI
+    networks:
+      - rag_network
+
+networks:
+  rag_network:
+    driver: bridge

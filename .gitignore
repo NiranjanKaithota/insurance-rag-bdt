@@ -1,0 +1,20 @@
+# Python Virtual Environment
+venv/
+__pycache__/
+*.pyc
+
+# Spark & Hadoop Temp Files
+spark-warehouse/
+metastore_db/
+derby.log
+*.crc
+
+# Docker HDFS Storage Volumes (CRITICAL: Do not push database files!)
+data/hdfs_storage/
+
+# Raw Input Data (Keep the folder, ignore the massive PDFs)
+data/input_pdfs/*.pdf
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
