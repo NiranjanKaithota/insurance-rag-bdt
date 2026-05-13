@@ -18,3 +18,5 @@ data/input_pdfs/*.pdf
 # OS Generated Files
 .DS_Store
 Thumbs.db
+
+.env

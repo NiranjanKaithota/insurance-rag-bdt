@@ -1,7 +1,7 @@
-# version: '3.8'
-
 services:
+  # =========================================
   # 1. APACHE NIFI (Ingestion Layer)
+  # =========================================
   nifi:
     image: apache/nifi:1.25.0
     container_name: rag_nifi
@@ -12,11 +12,14 @@ services:
       - SINGLE_USER_CREDENTIALS_USERNAME=admin
       - SINGLE_USER_CREDENTIALS_PASSWORD=SuperSecretPassword123! # Must be 12+ chars
     volumes:
-      - ./data/input_pdfs:/opt/nifi/nifi-current/data/input_pdfs # Maps local PDF folder to NiFi
+      - ./data/input_pdfs:/opt/nifi/nifi-current/data/input_pdfs
+      - ./data/core-site.xml:/opt/nifi/nifi-current/conf/core-site.xml
     networks:
       - rag_network
 
+  # =========================================
   # 2. HADOOP NAMENODE (HDFS Storage Layer)
+  # =========================================
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
     container_name: rag_namenode
@@ -29,29 +32,31 @@ services:
       - ./hadoop.env
     volumes:
       - ./data/hdfs_storage/namenode:/hadoop/dfs/name
-      - ./data/input_pdfs:/opt/nifi/nifi-current/data/input_pdfs
-      - ./data/core-site.xml:/opt/nifi/nifi-current/conf/core-site.xml
     networks:
       - rag_network
 
+  # =========================================
   # 3. HADOOP DATANODE
+  # =========================================
   datanode:
     image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
-    container_name: rag-datanode
-    hostname: rag-datanode
+    container_name: rag-datanode   # Using hyphen to prevent Java URI errors
+    hostname: rag-datanode         # Using hyphen to prevent Java URI errors
     environment:
       SERVICE_PRECONDITION: "namenode:9870"
     env_file:
       - ./hadoop.env
     ports:
       - "9864:9864" # WebHDFS HTTP
-      - "9866:9866" # Data Transfer Port
+      - "9866:9866" # Data Transfer Port (Required for Spark)
     volumes:
       - ./data/hdfs_storage/datanode:/hadoop/dfs/data
     networks:
       - rag_network
 
+  # =========================================
   # 4. NEO4J (Graph Database for GraphRAG)
+  # =========================================
   neo4j:
     image: neo4j:5.15.0
     container_name: rag_neo4j
@@ -63,17 +68,50 @@ services:
     networks:
       - rag_network
 
-  # 5. MILVUS (Standalone Vector Database)
+  # =========================================
+  # 5. MILVUS VECTOR DATABASE (For AI Embeddings)
+  # =========================================
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: rag_etcd
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ./data/etcd:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    networks:
+      - rag_network
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: rag_minio
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    volumes:
+      - ./data/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    networks:
+      - rag_network
+
   milvus:
     image: milvusdb/milvus:v2.3.11
     container_name: rag_milvus
     command: ["milvus", "run", "standalone"]
     environment:
-      ETCD_ENDPOINTS: milvus:2379
-      MINIO_ADDRESS: milvus:9000
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ./data/milvus:/var/lib/milvus
     ports:
       - "19530:19530" # Milvus Server
       - "9091:9091"   # Milvus Web UI
+    depends_on:
+      - "etcd"
+      - "minio"
     networks:
       - rag_network
 

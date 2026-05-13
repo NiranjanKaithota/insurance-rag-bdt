@@ -4,3 +4,4 @@ sentence-transformers
 pymilvus
 langchain-text-splitters
 torch
+python-dotenv
