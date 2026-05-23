@@ -116,8 +116,12 @@ def main():
     print("3. Initializing Spark Session...")
     spark = SparkSession.builder \
         .appName("InsurancePolicyProcessor") \
-        .master("local[*]") \
+        .master("local[2]") \
+        .config("spark.driver.memory", "4g") \
+        .config("spark.executor.memory", "4g") \
         .config("spark.hadoop.dfs.client.use.datanode.hostname", "true") \
+        .config("spark.network.timeout", "3600s") \
+        .config("spark.executor.heartbeatInterval", "600s") \
         .getOrCreate()
 
     hdfs_path = "hdfs://localhost:9000/data/raw/insurance_pdfs/*.pdf"

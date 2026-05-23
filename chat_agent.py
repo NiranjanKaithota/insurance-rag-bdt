@@ -76,5 +76,5 @@ def generate_rag_response(question):
 
 if __name__ == "__main__":
     # Test with a specific insurance query
-    query = "What medical infrastructure goals are mentioned in the Ayushman Bharat mission?"
+    query = "What are the key features and eligibility criteria of the PM-POSHAN scheme?"
     generate_rag_response(query)
