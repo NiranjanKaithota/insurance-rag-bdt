@@ -1,48 +1,99 @@
-# 🏛️ Multi-Agent GraphRAG System for Indian Government Insurance Inference
+# 🏛️ Multi‑Agent GraphRAG System for Indian Government Insurance
 
-**Project Context:** RV College of Engineering (RVCE) - Big Data Technology
+**Project Context:** RV College of Engineering (RVCE) — Big Data Technology
 
-## 📖 Overview
-This project implements an enterprise-grade Big Data integration pipeline designed to ingest, process, and accurately query massive, unstructured government health insurance policies (e.g., PM-JAY, IRDAI Circulars). 
+## Overview
+This repository implements a Big Data pipeline that ingests government insurance policies (PDFs), processes them with Spark and LLMs, and provides a hybrid retrieval system combining a vector store (Milvus) and a knowledge graph (Neo4j). The system is designed to reduce LLM hallucinations by cross-checking semantic retrievals with explicit graph rules and returning structured Eligibility Matrices.
 
-It utilizes a Retrieval-Augmented Generation (RAG) architecture to prevent LLM hallucinations, ensuring that all inferred eligibility and benefit answers are strictly grounded in official documents.
+## System Architecture
+![Architecture Diagram](image.png)
 
-## 🏗️ Current Architecture (Phase 1 & 2 Completed)
-The system currently operates a fully functional linear RAG pipeline using a local Dockerized cluster:
+### The 5-Layer Big Data Stack:
+1. **Automated Ingestion (Apache NiFi):** Securely captures raw policy PDFs from local environments and routes them into the distributed cluster without manual intervention.
+2. **Distributed Storage (Hadoop HDFS):** Provides fault-tolerant, scalable persistence for all raw unstructured documents.
+3. **Parallel Compute (Apache Spark):** Distributes the heavy NLP workloads. It handles recursive text chunking, PyTorch-based vector embedding generation (`all-MiniLM-L6-v2`), and orchestrates LLM-based triplet extraction.
+4. **Hybrid Semantic Memory:** * **Milvus (Vector DB):** Stores 384-dimensional embeddings for high-speed semantic similarity searches.
+   * **Neo4j (Graph DB):** Stores extracted Entities and Relationships (e.g., `[PMFBY] -> COVERS -> [FARMERS]`) to map complex policy rules.
+5. **Cognitive Orchestration (LangGraph + Cohere):** A swarm of specialized AI agents (Vector Retriever, Graph Retriever, and Synthesizer) that fuse the data and utilize the `command-r-08-2024` model to output structured BI dashboards (Eligibility Matrices).
 
-1. **Automated Ingestion (Apache NiFi):** Monitors local directories and securely transfers raw UPSC policy compilations and PDF circulars into the cluster.
-2. **Distributed Storage (Hadoop HDFS):** Provides fault-tolerant persistence for the raw documents (`/data/raw/insurance_pdfs/`).
-3. **Parallel Compute (Apache Spark):** Distributes the text-extraction and PyTorch-based vectorization (using `all-MiniLM-L6-v2`). Throttled to `local[2]` for stable local machine processing.
-4. **Vector Database (Milvus):** Stores the 384-dimensional mathematical embeddings for millisecond-speed semantic similarity searches.
-5. **Generation (Cohere API):** Utilizes the `command-r-08-2024` model, specifically optimized for long-context RAG, to synthesize factual answers.
+## Prerequisites
+- Docker Desktop (recommended: allocate ≥ 8 GB RAM)
+- Python 3.10+
+- Java 8 (required by PySpark/Hadoop)
+- A Cohere API key (https://dashboard.cohere.com)
 
-## 🚀 Development Roadmap
+## Quickstart (Windows - Powershell)
+Follow these steps to get a local environment running.
 
-### ✅ Sprint 1: Knowledge Base & Linear RAG (Completed)
-- [x] Docker-compose cluster orchestration.
-- [x] NiFi to HDFS automated routing.
-- [x] Distributed chunking and embedding generation via Spark.
-- [x] Milvus schema creation and semantic retrieval pipeline.
-- [x] Secure API integration (`python-dotenv`) with Cohere.
+### 1) Clone and prepare the Python environment
+```powershell
+git clone https://github.com/NiranjanKaithota/insurance-rag-bdt.git
+cd insurance-rag-system
+python -m venv venv
+.\venv\Scripts\Activate.ps1   # in PowerShell
+pip install -r requirements.txt
+```
 
-### ⏳ Sprint 2: Hybrid Knowledge Graph (Next Up)
-- [ ] Implement Entity & Relation extraction (Triplets).
-- [ ] Connect Apache Spark to **Neo4j** Graph Database.
-- [ ] Map complex policy rules (e.g., *Scheme A -> COVERS -> Disease B*).
-- [ ] Upgrade retrieval query to pull from both Milvus (Vector) and Neo4j (Graph).
+Create a `.env` file in the project root with your Cohere key:
+```
+COHERE_API_KEY=your_api_key_here
+```
 
-### ⏳ Sprint 3: Multi-Agent Orchestration
-- [ ] Replace linear script with a stateful **LangGraph** swarm.
-- [ ] Build **Analyzer Agent:** Determines user intent.
-- [ ] Build **Validator Agent:** Cross-references retrieved data with live web searches to ensure policies haven't expired.
-- [ ] Build **Synthesizer Agent:** Debates and drafts the final response.
+### 2) Start infrastructure (Docker Compose)
+Spin up Hadoop, NiFi, Milvus, Neo4j and other services:
 
-### ⏳ Sprint 4: The Eligibility Matrix
-- [ ] Implement structured output formatting.
-- [ ] Ensure the final agent output is a highly structured, tabular "Eligibility Matrix" rather than conversational text.
+```powershell
+docker-compose up -d
+# Wait ~60-90s for services (NiFi, HDFS etc.) to initialize fully
+```
 
-## 🛠️ Tech Stack
-* **Storage & Ingestion:** Apache Hadoop (HDFS), Apache NiFi
-* **Processing:** Apache Spark, PySpark, PyTorch (`sentence-transformers`)
-* **Databases:** Milvus (Vector), Neo4j (Graph - *Pending*)
-* **AI & Orchestration:** Cohere Command-R, LangGraph (*Pending*)
+### 3) Ingest PDFs (automated)
+- Place PDFs into `data/input_pdfs/`.
+- Open NiFi UI: https://localhost:8443/nifi (default: `admin` / `SuperSecretPassword123!`)
+- Ensure the `GetFile -> PutHDFS` flow is running. Files placed in `data/input_pdfs/` will be routed into HDFS, typically under `/data/raw/insurance_pdfs/`.
+
+### 4) Build the AI "brain" (processing & indexing)
+Run the Spark-based pipelines once files are in HDFS.
+
+- Build the vector database (Milvus):
+```powershell
+python spark_processing/process_policies.py
+```
+
+- Build the knowledge graph (Neo4j):
+```powershell
+python spark_processing/build_graph.py
+```
+
+You can inspect the Neo4j DB at http://localhost:7474 (default: `neo4j` / `insurance_graph_password`). Example query to preview nodes:
+```cypher
+MATCH (n) RETURN n LIMIT 100;
+```
+
+### 5) Run the multi-agent RAG orchestrator
+```powershell
+python multi_agent_rag.py
+```
+
+Example user question: "What schemes are intended for farmers or agriculture?"
+
+Sample output (structured table):
+| Scheme Name | Target Beneficiary | Key Benefits / Coverage | Prerequisites |
+| --- | --- | --- | --- |
+| Pradhan Mantri Fasal Bima Yojana (PMFBY) | All farmers (including sharecroppers & tenant farmers) | Comprehensive crop insurance from pre-sowing to post-harvest | Voluntary enrollment |
+
+## Notes & Tips
+- Spark in the included scripts is configured to use `local[2]` to limit local CPU/RAM use; adjust if you have more resources.
+- If you modify Docker compose or change service ports, update the README and any scripts that reference those endpoints.
+
+## Built With
+- Apache Hadoop, Spark, NiFi
+- Milvus (vector DB)
+- Neo4j (graph DB)
+- LangGraph & LangChain (agent orchestration)
+- Cohere (LLM inference)
+- PyTorch & sentence-transformers (local embedding generation)
+
+## Troubleshooting
+- If NiFi doesn't pick files: confirm the `GetFile` processor points to `data/input_pdfs/` and is running.
+- If Spark jobs fail: check Java version and that required ports for HDFS are open and Docker containers are healthy.

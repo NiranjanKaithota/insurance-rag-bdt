@@ -5,3 +5,5 @@ pymilvus
 langchain-text-splitters
 torch
 python-dotenv
+neo4j
+spacy
